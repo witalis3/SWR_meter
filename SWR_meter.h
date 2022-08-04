@@ -58,16 +58,12 @@ const byte LED_PIN = 6;
 
 
 void show_template();
-void lcd_pwr();
 void get_pwr();
-void lcd_swr(int swr);
+void show_swr(int swr);
 void show_pwr(int Power);
 int correction(int input);
 int get_forward();
 int get_reverse();
 void pwr();
-
-// D0
-
-
+void swr();
 #endif /* SWR_METER_H_ */
