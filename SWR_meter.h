@@ -8,10 +8,11 @@
 #ifndef SWR_METER_H_
 #define SWR_METER_H_
 
-#define DEBUG
+//#define DEBUG
 //#define CZAS_PETLI
 #define CZAS_PETLI_PIN 8
 
+const byte ALARM_OUT_PIN = 5;
 const byte LED_PIN = 6;
 
 /* RGB 16-bit color table definition (RG565) */
@@ -66,4 +67,5 @@ int get_forward();
 int get_reverse();
 void pwr();
 void swr();
+void skala_mocy(int skala);
 #endif /* SWR_METER_H_ */

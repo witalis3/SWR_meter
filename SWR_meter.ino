@@ -10,11 +10,9 @@
  * 	- dwa zakresy: 2500W i 650W (HYO)
  *
  *	ToDo
- *		- drugi zakres (650W)
+ *		- korekta na różne diody
+ *		- co z SWRlow, SWR i int PWRround, PWRstep?
  *
- *		- kalibracja na żywo!
- *		- skala mocy 650: co 100 sześć odcinków?
- *		- skala SWR do 5? (ile się zmieści)
  * 	testy:
  * - odczyt 10x dwóch ADC: A0 i A1:
  * 		- CyberLib: 1,34ms
@@ -29,16 +27,15 @@
 
 #include <Adafruit_GFX.h>	// ver. 1.2.2
 #include <Adafruit_ILI9341.h>	// ver. 1.0.8
-#include <EEPROM.h>
+//#include <EEPROM.h>
 
 const char tft_cs = 2;// <= /CS pin (chip-select, LOW to get attention of ILI9341, HIGH and it ignores SPI bus) default 10!
 const char tft_dc = 3;// <= DC pin (1=data or 0=command indicator line) also called RS
 Adafruit_ILI9341 tft = Adafruit_ILI9341(tft_cs, tft_dc);
-const byte LO_HIGH_POWER_PIN = 4;
+const byte LO_HIGH_POWER_PIN = 4;		// LOW -> 650W; HIGH -> 2500W
 int FWD_PIN = A0;
 int REF_PIN = A1;
 
-int updateIndex = 0;
 // z ATU:
 int Power = 0, Power_old = 10000, PWR, SWR;
 char work_str[9], work_str_2[9];
@@ -46,15 +43,22 @@ byte p_cnt = 0;
 byte K_Mult = 33;	// ilość zwojów w transformatorze direct couplera
 int SWR_old = 10000;
 // D0ISM
-int View_scale; 	// rodzaj linijki: 0 - z podłożem; 1 bez podłoża (tła)
-int Scale_low, Scale_hi = 5, PWRround, PWRstep; //переменные вид шкалы, шкала малой мощности, большой мощности, округления, шаг округления и тон
+// skala mocy:
+// 5 - 2500W
+// 1 - 650W
+enum
+{
+	moc_650W = 1,
+	moc_2500W = 5
+};
+int Scale_hi;
+int y5, y8, y9;
 
-float SWRlow, SWRhi;                                            //переменные КСВ
+//int PWRround, PWRstep; //переменные вид шкалы, шкала малой мощности, большой мощности, округления, шаг округления и тон
+
+//float SWRlow, SWRhi;                                            //переменные КСВ
 int a, a_old, b_old, PWRthreshold; //переменные для градусников прямой волны и КСВ
-float V, t; //переменные для изм. мощности, КСВ, напряжения, температуры
 #define COLOR_SCALE ILI9341_WHITE                                                   //цвет шкалы линий КСВ и измерителя мощности
-int flag_power = 1;              //флаг переключения низкой или высокой мощности
-int flag_scale = 1;                  //переменная флага состояния шкалы мощности
 
 void setup()
 {
@@ -66,18 +70,23 @@ void setup()
 	pinMode(CZAS_PETLI_PIN, OUTPUT);
 #endif
 	pinMode(LED_PIN, OUTPUT);
-	pinMode(LO_HIGH_POWER_PIN, INPUT_PULLUP);		// stan aktywny niski?
+	pinMode(ALARM_OUT_PIN, OUTPUT);
+
+	pinMode(LO_HIGH_POWER_PIN, INPUT_PULLUP);
 	tft.begin();
 	tft.setRotation(3);
 	tft.fillScreen(ILI9341_BLACK);
 	tft.setTextColor(ILI9341_GREEN, ILI9341_BLACK);
 	tft.setTextSize(2);
 	tft.setCursor(20, 90);
-	tft.println("SWR & power meter v1.0");
+	tft.println("SWR & power meter v1.0.1");
 	digitalWrite(LED_PIN, HIGH);
 	delay(500);
 	tft.setTextSize(3);
 	tft.fillScreen(ILI9341_BLACK);
+	y8 = 119;	// położenie potrójnej linii
+	y5 = 89;	// położenie górnej skali
+	y9 = 151;	// położenie dolnej skali
 	show_template();
 }
 
@@ -85,9 +94,13 @@ void loop()
 {
 	if (digitalRead(LO_HIGH_POWER_PIN) == LOW)
 	{
-
+		Scale_hi = moc_650W;
 	}
-
+	else
+	{
+		Scale_hi = moc_2500W;
+	}
+	skala_mocy(Scale_hi);
 	get_pwr();
 	pwr();
 	swr();
@@ -107,23 +120,16 @@ void loop()
  */
 void show_template()
 {
-	int y5, y8, y9;
-	y8 = 119;	// położenie potrójnej linii
-	y5 = 89;	// położenie górnej skali
-	y9 = 151;	// położenie dolnej skali
-	View_scale = EEPROM.read(1);    //читаем данные с 1 ячейки памяти вида шкалы
-	Scale_low = EEPROM.read(2); //читаем данные с 2 ячейки памяти масштаб малой мощности
-	Scale_hi = EEPROM.read(3); //читаем данные с 3 ячейки памяти масштаб большой мощности
-	Scale_hi = 5;
+	//Scale_hi = EEPROM.read(3); //читаем данные с 3 ячейки памяти масштаб большой мощности
+	Scale_hi = moc_2500W;
+	/*
 	EEPROM.get(4, SWRlow); //читаем данные с 4 по 7 ячейки памяти значение сигнализации SWRlow
 	EEPROM.get(8, SWRhi); //читаем данные с 8 по 11 ячейки памяти срабатывания сигнализации SWRhi
 	PWRround = EEPROM.read(12); //читаем данные с 12 ячейки памяти предела мощности округления
 	PWRround = 50;
 	PWRstep = EEPROM.read(13); //читаем данные с 13 ячейки памяти шага округления мощности
 	PWRstep = 10;
-	//Tone=      EEPROM.read(14);
-	//читаем данные с 14 ячейки памяти значение тональности сигнала
-	//коэф. мощности и пороги переключения для малой и большой мощности
+	*/
 
 	for (int i = 0; i < 2; i++)
 	{
@@ -190,25 +196,7 @@ void show_template()
 	tft.print("3.5");
 	tft.setCursor(302, y5 - 22);
 	tft.print("4");
-	if (Scale_hi == 5)
-	{
-		tft.setTextSize(2);
-		tft.setTextColor(COLOR_SCALE, COLOR_BLACK);
-		tft.setCursor(6, y9+10);
-		tft.print("0");
-		tft.setTextColor(COLOR_SCALE, COLOR_BLACK);
-		tft.setCursor(50, y9+10);
-		tft.print("500");
-		tft.setTextColor(COLOR_YELLOW, COLOR_BLACK);
-		tft.setCursor(106, y9+10);
-		tft.print("1000");
-		tft.setTextColor(COLOR_ORANGE, COLOR_BLACK);
-		tft.setCursor(170, y9+10);
-		tft.print("1500");
-		tft.setTextColor(COLOR_RED, COLOR_BLACK);
-		tft.setCursor(232, y9+10);
-		tft.print("2000");
-	}
+	skala_mocy(moc_2500W);
 	tft.setTextSize(3);
 	tft.setCursor(10, 12);
 	tft.setTextColor(COLOR_SKYBLUE);
@@ -432,105 +420,76 @@ int get_reverse()
 void pwr()
 {
 	 int R = 0, G = 0, B = 0;
-
-	if (flag_power == 1)
-	{                                        //проверяем флаг состояния мощности
-		/*
-		if (flag_scale == 1)
-		{
-			flag_scale++; //проверяем флаг состояния шкалы, увеличиваем его на 1
-			//tft.fillRectangle(5, 122, 215, 136, COLOR_BLACK); //стираем старую шкалу черным цветом
-			tft.fillRect(5, 122, 215 - 5, 136 - 122, COLOR_BLACK); //стираем старую шкалу черным цветом
-
-		}
-		*/
-		/*
-		 if (PWR >= PWRround * 10)
-		 {
-		 int PWR1 = PWR / PWRstep;
-		 PWR = PWR1 * PWRstep;//свыше PWRround показания мощности приводим кратно PWRstep
-		 }
-		 */
 #ifdef DEBUG
 		Serial.print("PWR = ");
 		Serial.println(PWR);
 #endif
-		show_pwr(PWR);
-		show_swr(SWR);
-		/*
-		 dtostrf(PWR, len, 0, buf);       //преобразуем значение PWR в массив buf
-		 buf[len] = 'W';
-		 buf[len + 1] = 0;                           //добавляем к массиву знак W
-		 //tft.drawText(153, 8, buf + String(' '), COLOR_GREEN);//выводим значение мощности
-		 tft.setCursor(153, 8);
-		 tft.setTextColor(COLOR_GREEN);
-		 tft.print(buf);
-		 */
-	}
-	if (flag_power == 1)
-	{         //выбираем масштаб градусника выходной мощности, если флаг равен 1
-		if (Scale_hi == 5)
-		{
+	show_pwr(PWR);
+	show_swr(SWR);
+	switch (Scale_hi) {
+		case moc_2500W:
 			a = PWR / 41;
-			if (a > 60)
-				a = 60;
-		}
+			break;
+		case moc_650W:
+			a = PWR / 11;
+			break;
+		default:
+			break;
 	}
-	if (View_scale == 1)
-	{                                       //если выбран вид шкалы без подложки
-		// linijka mocy
-		if (a > a_old)
-		{ //если новое значение a больше старого a_old (движение градусника вправо)
-			for (int i = a_old; i < a; i++)
+	if (a > 60)
+		a = 60;
+	// linijka mocy
+	if (a > a_old)
+	{ //если новое значение a больше старого a_old (движение градусника вправо)
+		for (int i = a_old; i < a; i++)
+		{
+			// czerwony:
+			if (i < 30)
 			{
-				// czerwony:
-				if (i < 30)
-				{
-					R = 0;
-				}                      //определение красного цвета в градуснике
-				if ((i >= 30) && (i <= 44))
-				{
-					R = map(i, 30, 44, 0, 255);
-				}                      //---------------------------------------
-				if (i > 44)
-				{
-					R = 255;
-				}                      //---------------------------------------
-				// zielony:
-				if (i <= 14)
-				{
-					G = map(i, 0, 14, 0, 255);
-				}                      //определение зеленого цвета в градуснике
-				if ((i > 14) && (i <= 44))
-				{
-					G = 255;
-				}                      //---------------------------------------
-				if (i > 44)
-				{
-					G = map(i, 45, 59, 255, 0);
-				}                      //---------------------------------------
-				// niebieski:
-				if (i <= 14)
-				{
-					B = 255;
-				}                        //определение синего цвета в градуснике
-				if (i > 29)
-				{
-					B = 0;
-				}                        //-------------------------------------
-				if ((i > 14) && (i <= 29))
-				{
-					B = map(i, 29, 9, 0, 255);
-				}                        //-------------------------------------
-				tft.fillRect(10 + i*5, 127, 2, 20, tft.color565(R, G, B));
-			}            //рисуем градиентный градусник пропорционально мощности
-			a_old = a;
-		}                                  //выравниваем старое и новое значение
-		else if (a < a_old)
-		{                                                                //иначе
-			tft.fillRect(10 + a*5, 127, 2 + (a_old - a)*5, 20, COLOR_BLACK); //стираем градусник при движении влево
-			a_old = a;
-		}
+				R = 0;
+			}                      //определение красного цвета в градуснике
+			if ((i >= 30) && (i <= 44))
+			{
+				R = map(i, 30, 44, 0, 255);
+			}                      //---------------------------------------
+			if (i > 44)
+			{
+				R = 255;
+			}                      //---------------------------------------
+			// zielony:
+			if (i <= 14)
+			{
+				G = map(i, 0, 14, 0, 255);
+			}                      //определение зеленого цвета в градуснике
+			if ((i > 14) && (i <= 44))
+			{
+				G = 255;
+			}                      //---------------------------------------
+			if (i > 44)
+			{
+				G = map(i, 45, 59, 255, 0);
+			}                      //---------------------------------------
+			// niebieski:
+			if (i <= 14)
+			{
+				B = 255;
+			}                        //определение синего цвета в градуснике
+			if (i > 29)
+			{
+				B = 0;
+			}                        //-------------------------------------
+			if ((i > 14) && (i <= 29))
+			{
+				B = map(i, 29, 9, 0, 255);
+			}                        //-------------------------------------
+			tft.fillRect(10 + i * 5, 127, 2, 20, tft.color565(R, G, B));
+		}            //рисуем градиентный градусник пропорционально мощности
+		a_old = a;
+	}                                  //выравниваем старое и новое значение
+	else if (a < a_old)
+	{                                                                //иначе
+		tft.fillRect(10 + a * 5, 127, 2 + (a_old - a) * 5, 20, COLOR_BLACK); //стираем градусник при движении влево
+		a_old = a;
 	}
 }
 // linijka SWR
@@ -550,60 +509,100 @@ void swr()
 	{
 		b = 30;
 	}                                        //ограничиваем градусник до КСВ=4.0
-	if (View_scale == 1)
-	{                                       //если выбран вид шкалы без подложки
-		if (b > b_old)
-		{       //если новое значение больше старого(движение градусника вправо)
-			for (int i = b_old; i < b; i++)
-			{                                                    //включаем цикл
-				if (i < 15)
-				{
-					R = 0;
-				}                      //определение красного цвета в градуснике
-				// czerwony
-				if ((i >= 15) && (i <= 23))
-				{
-					R = map(i, 15, 23, 0, 255);
-				}                      //---------------------------------------
-				if (i > 23)
-				{
-					R = 255;
-				}                      //---------------------------------------
-				// zielony
-				if (i <= 8)
-				{
-					G = map(i, 0, 8, 0, 255);
-				}                      //определение зеленого цвета в градуснике
-				if ((i > 8) && (i <= 23))
-				{
-					G = 255;
-				}                      //---------------------------------------
-				if (i > 23)
-				{
-					G = map(i, 24, 29, 255, 0);
-				}                      //---------------------------------------
-				// niebieski
-				if (i <= 8)
-				{
-					B = 255;
-				}                        //определение синего цвета в градуснике
-				if (i > 14)
-				{
-					B = 0;
-				}                        //-------------------------------------
-				if ((i > 8) && (i <= 14))
-				{
-					B = map(i, 14, 8, 0, 255);
-				}                        //-------------------------------------
-				tft.fillRect(10 + i * 10, 94, 7, 20, tft.color565(R, G, B));
-			}                //рисуем градиентный градусник пропорционально КСВ
-			b_old = b;
-		}                                  //выравниваем старое и новое значение
-		else if (b < b_old)
-		{                                                                //иначе
-			tft.fillRect(10 + b * 10, 94, 7 + (b_old - b) * 10, 20, COLOR_BLACK);         //стираем градусник при движении влево
-			b_old = b;
-		}
-	}                                      //выравниваем старое и новое значение
-
+	if (b > b_old)
+	{       //если новое значение больше старого(движение градусника вправо)
+		for (int i = b_old; i < b; i++)
+		{
+			if (i < 15)
+			{
+				R = 0;
+			}                      //определение красного цвета в градуснике
+			// czerwony
+			if ((i >= 15) && (i <= 23))
+			{
+				R = map(i, 15, 23, 0, 255);
+			}                      //---------------------------------------
+			if (i > 23)
+			{
+				R = 255;
+			}                      //---------------------------------------
+			// zielony
+			if (i <= 8)
+			{
+				G = map(i, 0, 8, 0, 255);
+			}                      //определение зеленого цвета в градуснике
+			if ((i > 8) && (i <= 23))
+			{
+				G = 255;
+			}                      //---------------------------------------
+			if (i > 23)
+			{
+				G = map(i, 24, 29, 255, 0);
+			}                      //---------------------------------------
+			// niebieski
+			if (i <= 8)
+			{
+				B = 255;
+			}                        //определение синего цвета в градуснике
+			if (i > 14)
+			{
+				B = 0;
+			}                        //-------------------------------------
+			if ((i > 8) && (i <= 14))
+			{
+				B = map(i, 14, 8, 0, 255);
+			}                        //-------------------------------------
+			tft.fillRect(10 + i * 10, 94, 7, 20, tft.color565(R, G, B));
+		}                //рисуем градиентный градусник пропорционально КСВ
+		b_old = b;
+	}                                  //выравниваем старое и новое значение
+	else if (b < b_old)
+	{                                                                //иначе
+		tft.fillRect(10 + b * 10, 94, 7 + (b_old - b) * 10, 20, COLOR_BLACK); //стираем градусник при движении влево
+		b_old = b;
+	}
+}
+void skala_mocy(int skala)
+{
+	switch (skala)
+	{
+		case moc_2500W:
+			tft.setTextSize(2);
+			tft.setTextColor(COLOR_SCALE, COLOR_BLACK);
+			tft.setCursor(6, y9+10);
+			tft.print("0");
+			tft.setTextColor(COLOR_SCALE, COLOR_BLACK);
+			tft.setCursor(50, y9+10);
+			tft.print("500");
+			tft.setTextColor(COLOR_YELLOW, COLOR_BLACK);
+			tft.setCursor(106, y9+10);
+			tft.print("1000");
+			tft.setTextColor(COLOR_ORANGE, COLOR_BLACK);
+			tft.setCursor(170, y9+10);
+			tft.print("1500");
+			tft.setTextColor(COLOR_RED, COLOR_BLACK);
+			tft.setCursor(232, y9+10);
+			tft.print("2000");
+			break;
+		case moc_650W:
+			tft.setTextSize(2);
+			tft.setTextColor(COLOR_SCALE, COLOR_BLACK);
+			tft.setCursor(6, y9+10);
+			tft.print("0");
+			tft.setTextColor(COLOR_SCALE, COLOR_BLACK);
+			tft.setCursor(50, y9+10);
+			tft.print("130");
+			tft.setTextColor(COLOR_YELLOW, COLOR_BLACK);
+			tft.setCursor(106, y9+10);
+			tft.print("260 ");
+			tft.setTextColor(COLOR_ORANGE, COLOR_BLACK);
+			tft.setCursor(170, y9+10);
+			tft.print("390 ");
+			tft.setTextColor(COLOR_RED, COLOR_BLACK);
+			tft.setCursor(232, y9+10);
+			tft.print("520 ");
+			break;
+		default:
+			break;
+	}
 }
