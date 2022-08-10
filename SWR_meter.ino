@@ -79,7 +79,7 @@ void setup()
 	tft.setTextColor(ILI9341_GREEN, ILI9341_BLACK);
 	tft.setTextSize(2);
 	tft.setCursor(20, 90);
-	tft.println("SWR & power meter v1.0.1");
+	tft.println("SWR & power meter v1.0.2");
 	digitalWrite(LED_PIN, HIGH);
 	delay(500);
 	tft.setTextSize(3);
