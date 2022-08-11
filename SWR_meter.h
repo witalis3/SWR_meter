@@ -12,7 +12,7 @@
 //#define CZAS_PETLI
 #define CZAS_PETLI_PIN 8
 
-const byte ALARM_OUT_PIN = 5;
+const byte ALARM_OUT_PIN = 5;	// stan aktywny wysoki; HIGH -> jest alarm
 const byte LED_PIN = 6;
 
 /* RGB 16-bit color table definition (RG565) */

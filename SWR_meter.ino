@@ -40,7 +40,13 @@ int REF_PIN = A1;
 int Power = 0, Power_old = 10000, PWR, SWR;
 char work_str[9], work_str_2[9];
 byte p_cnt = 0;
+//------------------------------------------------------------------------------------------------
+// inne stałe do ustawienia:
+//------------------------------------------------------------------------------------------------
 byte K_Mult = 33;	// ilość zwojów w transformatorze direct couplera
+unsigned int alarmowySWR = 300;		// poziom alarmu od nadmiernego SWR (razy 100)
+unsigned int czasResetuAlarmu = 10000;	// po jakim czasie alarm od SWR ma być kasowany [ms]
+//------------------------------------------------------------------------------------------------
 int SWR_old = 10000;
 // D0ISM
 // skala mocy:
@@ -71,7 +77,7 @@ void setup()
 #endif
 	pinMode(LED_PIN, OUTPUT);
 	pinMode(ALARM_OUT_PIN, OUTPUT);
-
+	digitalWrite(ALARM_OUT_PIN, LOW);
 	pinMode(LO_HIGH_POWER_PIN, INPUT_PULLUP);
 	tft.begin();
 	tft.setRotation(3);
@@ -79,7 +85,7 @@ void setup()
 	tft.setTextColor(ILI9341_GREEN, ILI9341_BLACK);
 	tft.setTextSize(2);
 	tft.setCursor(20, 90);
-	tft.println("SWR & power meter v1.0.2");
+	tft.println("SWR & power meter v1.0.3");
 	digitalWrite(LED_PIN, HIGH);
 	delay(500);
 	tft.setTextSize(3);
@@ -294,6 +300,8 @@ void get_pwr()
 {
 	long Forward, Reverse;
 	float p;
+	static bool jestAlarmSWR;
+	static unsigned long czasAlarmuSWR;
 	//
 	Forward = get_forward();
 	Reverse = get_reverse();
@@ -319,7 +327,9 @@ void get_pwr()
 #endif
 
 	if (Reverse >= Forward)
+	{
 		Forward = 999;
+	}
 	else
 	{
 		Forward = ((Forward + Reverse) * 100) / (Forward - Reverse);
@@ -328,6 +338,24 @@ void get_pwr()
 
 		if (Forward > 999)
 			Forward = 999;
+	}
+	// alarm na wyjściu przy SWR > alarmowySWR
+	if (Forward > alarmowySWR)
+	{
+		digitalWrite(ALARM_OUT_PIN, HIGH);
+		jestAlarmSWR = true;
+		czasAlarmuSWR = millis();
+	}
+	else
+	{
+		if (jestAlarmSWR)
+		{
+			if (millis() - czasAlarmuSWR > czasResetuAlarmu)
+			{
+				jestAlarmSWR = false;
+				digitalWrite(ALARM_OUT_PIN, LOW);
+			}
+		}
 	}
 	// odtąd Forward to jest wyliczony lub ustalony SWR!
 	//
