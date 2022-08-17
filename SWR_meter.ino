@@ -9,8 +9,10 @@
  * założenia:
  * 	- dwa zakresy: 2500W i 650W (HYO)
  *
+ *	wersja 1.0.4
+ *		- zmienna korekcja: decyduje, czy uwzględniać wpływ nieliniowości diody przy obliczaniu SWR i mocy
  *	ToDo
- *		- korekta na różne diody
+ *		- korekta korekcji
  *		- co z SWRlow, SWR i int PWRround, PWRstep?
  *
  * 	testy:
@@ -35,6 +37,13 @@ Adafruit_ILI9341 tft = Adafruit_ILI9341(tft_cs, tft_dc);
 const byte LO_HIGH_POWER_PIN = 4;		// LOW -> 650W; HIGH -> 2500W
 int FWD_PIN = A0;
 int REF_PIN = A1;
+/*
+ *	zmienna korekcja:
+ *	1 - obliczenia SWR uwzględniają nieliniowość diody
+ *	0 - obliczenia SWR nie uwzględniają nieliniowości diody
+ *
+ */
+const byte korekcja = 0;
 
 // z ATU:
 int Power = 0, Power_old = 10000, PWR, SWR;
@@ -85,7 +94,7 @@ void setup()
 	tft.setTextColor(ILI9341_GREEN, ILI9341_BLACK);
 	tft.setTextSize(2);
 	tft.setCursor(20, 90);
-	tft.println("SWR & power meter v1.0.3");
+	tft.println("SWR & power meter v1.0.4");
 	digitalWrite(LED_PIN, HIGH);
 	delay(500);
 	tft.setTextSize(3);
@@ -317,7 +326,14 @@ void get_pwr()
 		Serial.println(Reverse);
 	}
 #endif
-	p = correction(Forward * 3);
+	if (korekcja == 1)
+	{
+		p = correction(Forward * 3);
+	}
+	else
+	{
+		p = Forward * 3;
+	}
 #ifdef DEBUGi
     if (p > 0)
     {

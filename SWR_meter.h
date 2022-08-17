@@ -68,4 +68,7 @@ int get_reverse();
 void pwr();
 void swr();
 void skala_mocy(int skala);
+// ze sterownika
+void read_inputs();
+
 #endif /* SWR_METER_H_ */
