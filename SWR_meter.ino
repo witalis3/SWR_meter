@@ -1,6 +1,8 @@
 #include "Arduino.h"
 /*
  *
+ *	NIEUŻYWANY!!!
+ *
  * Inspiracje:
  * 		ATU-100 wg N7DDC
  * 			- obliczenia
@@ -12,6 +14,10 @@
  *	wersja 1.0.4
  *		- zmienna korekcja: decyduje, czy uwzględniać wpływ nieliniowości diody przy obliczaniu SWR i mocy
  *	ToDo
+ *		- liczenie dokładnie jak w sterowniku
+ *			- osobny plik?
+ *		- zamiana mocy z SWR
+ *		- linijka mocy wyskakuje
  *		- korekta korekcji
  *		- co z SWRlow, SWR i int PWRround, PWRstep?
  *
@@ -43,7 +49,7 @@ int REF_PIN = A1;
  *	0 - obliczenia SWR nie uwzględniają nieliniowości diody
  *
  */
-const byte korekcja = 0;
+const byte korekcja = 1;
 
 // z ATU:
 int Power = 0, Power_old = 10000, PWR, SWR;
@@ -52,7 +58,7 @@ byte p_cnt = 0;
 //------------------------------------------------------------------------------------------------
 // inne stałe do ustawienia:
 //------------------------------------------------------------------------------------------------
-byte K_Mult = 33;	// ilość zwojów w transformatorze direct couplera
+byte K_Mult = 24;	// ilość zwojów w transformatorze direct couplera
 unsigned int alarmowySWR = 300;		// poziom alarmu od nadmiernego SWR (razy 100)
 unsigned int czasResetuAlarmu = 10000;	// po jakim czasie alarm od SWR ma być kasowany [ms]
 //------------------------------------------------------------------------------------------------
@@ -408,6 +414,64 @@ void get_pwr()
  */
 int correction(int input)
 {
+#ifdef KOREKCJA_BAT41_10k
+	if (input <= 80)
+	{
+		return 0;
+	}
+	if (input <= 171)
+	{
+		input += 205;	// 244
+	}
+	else if (input <= 328)
+	{
+		input += 215;	// 254
+	}
+	else if (input <= 582)
+	{
+		input += 226;	// 280
+	}
+	else if (input <= 820)
+	{
+		input += 241;	// 297
+	}
+	else if (input <= 1100)
+	{
+		input += 250;	// 310
+	}
+	else if (input <= 2181)
+	{
+		input += 260;	// 430
+	}
+	else if (input <= 3322)
+	{
+		input += 270;	// 484
+	}
+	else if (input <= 4623)
+	{
+		input += 280;	// 530
+	}
+	else if (input <= 5862)
+	{
+		input += 290;	// 648
+	}
+	else if (input <= 7146)
+	{
+		input += 300;	// 743
+	}
+	else if (input <= 8502)
+	{
+		input += 310;	// 8000
+	}
+	else if (input <= 10500)
+	{
+		input += 320;	// 840
+	}
+	else
+	{
+		input += 330;	// 860
+	}
+#else
 	if (input <= 80)
 		return 0;
 	if (input <= 171)
@@ -436,7 +500,7 @@ int correction(int input)
 		input += 840;
 	else
 		input += 860;
-	//
+#endif
 	return input;
 }
 /*

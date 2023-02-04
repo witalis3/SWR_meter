@@ -12,6 +12,8 @@
 //#define CZAS_PETLI
 #define CZAS_PETLI_PIN 8
 
+#define KOREKCJA_BAT41_10k
+
 const byte ALARM_OUT_PIN = 5;	// stan aktywny wysoki; HIGH -> jest alarm
 const byte LED_PIN = 6;
 
